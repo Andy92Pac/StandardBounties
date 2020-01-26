@@ -28,11 +28,17 @@
   "homepage": "https://github.com/ConsenSys/StandardBounties#readme",
   "dependencies": {
     "bignumber.js": "^7.2.1",
+    "dotenv": "^8.2.0",
+    "ethereumjs-wallet": "^0.6.0",
     "ethers": "^4.0.7",
     "ethjs-provider-http": "^0.1.6",
     "ethjs-rpc": "^0.2.0",
+    "iexec-doracle-base": "0.0.9",
+    "node": "^10.18.1",
+    "scrypt": "^6.0.3",
     "solc": "0.5.0",
-    "truffle": "5.1.4"
+    "truffle": "^5.1.9",
+    "truffle-hdwallet-provider": "0.0.3"
   },
   "devDependencies": {
     "cryptiles": ">=4.1.2",
@@ -42,7 +48,6 @@
     "eslint-plugin-standard": "3.0.1",
     "eth-gas-reporter": "^0.1.12",
     "solidity-coverage": "^0.5.11",
-    "sshpk": ">=1.13.2",
-    "truffle-hdwallet-provider": "0.0.3"
+    "sshpk": ">=1.13.2"
   }
 }

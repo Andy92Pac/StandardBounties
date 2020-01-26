@@ -1,16 +1,19 @@
-pragma solidity 0.5.12;
+pragma solidity 0.5.16;
 pragma experimental ABIEncoderV2;
 
 import "./inherited/ERC20Token.sol";
 import "./inherited/ERC721Basic.sol";
+import "iexec-doracle-base/contracts/IexecDoracle.sol";
 
 
 /// @title StandardBounties
 /// @dev A contract for issuing bounties on Ethereum paying in ETH, ERC20, or ERC721 tokens
 /// @author Mark Beylin <mark.beylin@consensys.net>, Gonçalo Sá <goncalo.sa@consensys.net>, Kevin Owocki <kevin.owocki@consensys.net>, Ricardo Guilherme Schmidt (@3esmit), Matt Garnett <matt.garnett@consensys.net>, Craig Williams <craig.williams@consensys.net>
-contract StandardBounties {
+contract StandardBounties is IexecDoracle {
 
   using SafeMath for uint256;
+
+  enum State { OPEN, PENDING, CLOSE }
 
   /*
    * Structs
@@ -26,11 +29,17 @@ contract StandardBounties {
     bool hasPaidOut; // A boolean storing whether or not the bounty has paid out at least once, meaning refunds are no longer allowed
     Fulfillment[] fulfillments; // An array of Fulfillments which store the various submissions which have been made to the bounty
     Contribution[] contributions; // An array of Contributions which store the contributions which have been made to the bounty
+
+    uint selectedFulfillment;
+    State state;
+    uint pendingDeadline;
+    uint[] tokenAmounts;
   }
 
   struct Fulfillment {
     address payable[] fulfillers; // An array of addresses who should receive payouts for a given submission
     address submitter; // The address of the individual who submitted the fulfillment, who is able to update the submission as needed
+    bytes32 data; // The bytes32 transformation of ipfsHash where the data is stored
   }
 
   struct Contribution {
@@ -167,7 +176,8 @@ contract StandardBounties {
   * Public functions
   */
 
-  constructor() public {
+  // Use _iexecHubAddr to force use of custom iexechub, leave 0x0 for autodetect
+  constructor(address _iexecHubAddr) public IexecDoracle(_iexecHubAddr) {
     // The owner of the contract is automatically designated to be the deployer of the contract
     owner = msg.sender;
   }
@@ -444,7 +454,7 @@ contract StandardBounties {
     address _sender,
     uint _bountyId,
     address payable[] memory  _fulfillers,
-    string memory _data)
+    bytes32 _data)
     public
     senderIsValid(_sender)
     validateBountyArrayIndex(_bountyId)
@@ -452,7 +462,7 @@ contract StandardBounties {
     require(now < bounties[_bountyId].deadline); // Submissions are only allowed to be made before the deadline
     require(_fulfillers.length > 0); // Submissions with no fulfillers would mean no one gets paid out
 
-    bounties[_bountyId].fulfillments.push(Fulfillment(_fulfillers, _sender));
+    bounties[_bountyId].fulfillments.push(Fulfillment(_fulfillers, _sender, _data));
 
     emit BountyFulfilled(_bountyId,
                          (bounties[_bountyId].fulfillments.length - 1),
@@ -472,7 +482,7 @@ contract StandardBounties {
   uint _bountyId,
   uint _fulfillmentId,
   address payable[] memory _fulfillers,
-  string memory _data)
+  bytes32 _data)
   public
   senderIsValid(_sender)
   validateBountyArrayIndex(_bountyId)
@@ -516,12 +526,19 @@ contract StandardBounties {
 
     require(_tokenAmounts.length == fulfillment.fulfillers.length); // Each fulfiller should get paid some amount of tokens (this can be 0)
 
+    bounties[_bountyId].selectedFulfillment = _fulfillmentId;
+    bounties[_bountyId].state = State.PENDING;
+    bounties[_bountyId].pendingDeadline = now + 86400;
+    bounties[_bountyId].tokenAmounts = _tokenAmounts;
+
+/*
     for (uint256 i = 0; i < fulfillment.fulfillers.length; i++){
         if (_tokenAmounts[i] > 0){
           // for each fulfiller associated with the submission
           transferTokens(_bountyId, fulfillment.fulfillers[i], _tokenAmounts[i]);
         }
     }
+*/
     emit FulfillmentAccepted(_bountyId,
                              _fulfillmentId,
                              _sender,
@@ -543,7 +560,7 @@ contract StandardBounties {
     address _sender,
     uint _bountyId,
     address payable[] memory _fulfillers,
-    string memory _data,
+    bytes32 _data,
     uint _approverId,
     uint[] memory _tokenAmounts)
     public
@@ -803,6 +820,54 @@ contract StandardBounties {
     }
   }
 
+  function updateEnv(
+    address _authorizedApp
+    , address _authorizedDataset
+    , address _authorizedWorkerpool
+    , bytes32 _requiredtag
+    , uint256 _requiredtrust
+    )
+  public
+  {
+    require(msg.sender == owner);
+    _iexecDoracleUpdateSettings(_authorizedApp, _authorizedDataset, _authorizedWorkerpool, _requiredtag, _requiredtrust);
+  }
+
+  function decodeResults(bytes memory results)
+  public pure returns(uint256, bytes32, uint256)
+  { return abi.decode(results, (uint256, bytes32 , uint256)); }
+
+  function processResult(bytes32 _oracleCallID)
+  public
+  callNotStarted
+  {
+    uint256 requestId;
+    bytes32 ipfsHashBytes32;
+    uint256 status;
+
+    // Parse results
+    (requestId, ipfsHashBytes32, status) = decodeResults(_iexecDoracleGetVerifiedResult(_oracleCallID));
+
+    // Process results
+    require(requestId < numBounties);
+    require(bounties[requestId].state == State.PENDING);
+    require(bounties[requestId].fulfillments[bounties[requestId].selectedFulfillment].data == ipfsHashBytes32);
+    require(status == 1);
+
+    bounties[requestId].state = State.CLOSE;
+
+    Fulfillment storage fulfillment = bounties[requestId].fulfillments[bounties[requestId].selectedFulfillment];
+
+    for (uint256 i = 0; i < fulfillment.fulfillers.length; i++){
+        if (bounties[requestId].tokenAmounts[i] > 0){
+          // for each fulfiller associated with the submission
+          transferTokens(requestId, fulfillment.fulfillers[i], bounties[requestId].tokenAmounts[i]);
+        }
+    }
+
+    emit FulfillmentTransferred(requestId, bounties[requestId].selectedFulfillment);
+  }
+
   /*
    * Events
    */
@@ -813,12 +878,13 @@ contract StandardBounties {
   event ContributionsRefunded(uint _bountyId, address _issuer, uint[] _contributionIds);
   event BountyDrained(uint _bountyId, address _issuer, uint[] _amounts);
   event ActionPerformed(uint _bountyId, address _fulfiller, string _data);
-  event BountyFulfilled(uint _bountyId, uint _fulfillmentId, address payable[] _fulfillers, string _data, address _submitter);
-  event FulfillmentUpdated(uint _bountyId, uint _fulfillmentId, address payable[] _fulfillers, string _data);
-  event FulfillmentAccepted(uint _bountyId, uint  _fulfillmentId, address _approver, uint[] _tokenAmounts);
+  event BountyFulfilled(uint _bountyId, uint _fulfillmentId, address payable[] _fulfillers, bytes32 _data, address _submitter);
+  event FulfillmentUpdated(uint _bountyId, uint _fulfillmentId, address payable[] _fulfillers, bytes32 _data);
+  event FulfillmentAccepted(uint _bountyId, uint _fulfillmentId, address _approver, uint[] _tokenAmounts);
   event BountyChanged(uint _bountyId, address _changer, address payable[] _issuers, address payable[] _approvers, string _data, uint _deadline);
   event BountyIssuersUpdated(uint _bountyId, address _changer, address payable[] _issuers);
   event BountyApproversUpdated(uint _bountyId, address _changer, address[] _approvers);
   event BountyDataChanged(uint _bountyId, address _changer, string _data);
   event BountyDeadlineChanged(uint _bountyId, address _changer, uint _deadline);
+  event FulfillmentTransferred(uint _bountyId, uint _fulfillmentId);
 }

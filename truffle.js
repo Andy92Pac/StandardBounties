@@ -1,47 +1,48 @@
+require('dotenv').config() 
 const HDWalletProvider = require('truffle-hdwallet-provider')
-const fs = require('fs')
-
-// First read in the secrets.json to get our mnemonic
-let secrets
-let mnemonic
-if (fs.existsSync('secrets.json')) {
-  secrets = JSON.parse(fs.readFileSync('secrets.json', 'utf8'))
-  mnemonic = secrets.mnemonic
-} else {
-  console.log('No secrets.json found. If you are trying to publish EPM ' +
-              'this will fail. Otherwise, you can ignore this message!')
-  mnemonic = ''
-}
 
 module.exports = {
   networks: {
-    live: {
-      network_id: 1, // Ethereum public network,
-      gas: 4600000
-      // optional config values
-      // host - defaults to "localhost"
-      // port - defaults to 8545
-      // gas
-      // gasPrice
-      // from - default address to use for any transaction Truffle makes during migrations
+    development: {
+      host: 'localhost',
+      port: 8545,
+      network_id: '*' // Match any network id
     },
+    // testnets
+    // properties
+    // network_id: identifier for network based on ethereum blockchain. Find out more at https://github.com/ethereumbook/ethereumbook/issues/110
+    // gas: gas limit
+    // gasPrice: gas price in gwei
     ropsten: {
-      provider: new HDWalletProvider(mnemonic, 'https://ropsten.infura.io'),
-      network_id: '3',
-      gas: 4600000
+      provider: () => new HDWalletProvider(process.env.MNENOMIC, "https://ropsten.infura.io/v3/" + process.env.INFURA_API_KEY),
+      network_id: 3,
+      gas: 9000000,
+      gasPrice: 10000000000
     },
-    testrpc: {
-      network_id: 'default',
-      gas: 4000000000
+    kovan: {
+      provider: () => new HDWalletProvider(process.env.MNENOMIC, "https://kovan.infura.io/v3/" + process.env.INFURA_API_KEY),
+      network_id: 42,
+      gas: 10000000,
+      gasPrice: 10000000000
+    },
+    rinkeby: {
+      provider: () => new HDWalletProvider(process.env.MNENOMIC, "https://rinkeby.infura.io/v3/" + process.env.INFURA_API_KEY),
+      network_id: 4,
+      gas: 6000000,
+      gasPrice: 10000000000
+    },
+    // main ethereum network(mainnet)
+    main: {
+      provider: () => new HDWalletProvider(process.env.MNENOMIC, "https://mainnet.infura.io/v3/" + process.env.INFURA_API_KEY),
+      network_id: 1,
+      gas: 6000000,
+      gasPrice: 10000000000
     }
   },
-  mocha: {
-
-    reporter: 'eth-gas-reporter',
-    reporterOptions: {
-      currency: 'USD',
-      gasPrice: 6
+  solc: {
+    optimizer: {
+      enabled: true,
+      runs: 200
     }
-
   }
 }
