@@ -11,9 +11,9 @@ function encrypt(toEncrypt, relativeOrAbsolutePathToPublicKey) {
 }
 
 let test = require('./test.json')
-const { codeReview } = test.params
+const { codeReview } = test.payload
 const codeReviewStr = JSON.stringify(codeReview)
 const enc = encrypt(codeReviewStr, `public.pem`)
 
-test.params.codeReview = enc
+test.payload.codeReview = enc
 fs.writeFile('testencrypted.json', JSON.stringify(test), (err) => {})

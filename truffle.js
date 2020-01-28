@@ -25,6 +25,12 @@ module.exports = {
       gas: 10000000,
       gasPrice: 10000000000
     },
+    goerli: {
+      provider: () => new HDWalletProvider(process.env.MNENOMIC, "https://goerli.infura.io/v3/" + process.env.INFURA_API_KEY),
+      network_id: 5,
+      gas: 8000000,
+      gasPrice: 10000000000
+    },
     rinkeby: {
       provider: () => new HDWalletProvider(process.env.MNENOMIC, "https://rinkeby.infura.io/v3/" + process.env.INFURA_API_KEY),
       network_id: 4,
